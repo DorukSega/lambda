@@ -29,10 +29,10 @@ const varMap = new Map();
 const c = {
     includeTimes: (a, b) => a.replaceAll(RegExp("[^" + b + "]", "g"), "").length,
     isEquation: a => !!a.match(/(?<!=)=(?!=)/g),
-    splitEquation: a => a.split(/(?<!=)=(?!=)/g),
-    getLastPar: a => [a.slice(a.lastIndexOf('(') + 1).slice(0, a.slice(a.lastIndexOf('(') + 1).indexOf(")")).replaceAll(" ", ''), a.lastIndexOf('('), a.lastIndexOf('(') + 1 + a.slice(a.lastIndexOf('(') + 1).indexOf(")")],
+    splitEquation: a => a.split(/(?<!=)=(?!=)/),
+    getLastPar: a => [a.slice(a.lastIndexOf('(') + 1).slice(0, a.slice(a.lastIndexOf('(') + 1).indexOf(")")).replaceAll(" ", ''), a.lastIndexOf('('), a.lastIndexOf('(') + a.slice(a.lastIndexOf('(')).indexOf(")") + 1],
     replaceBetween: (str, start, end, to) => str.substring(0, start) + to + str.substring(end),
-    getVar: str => varMap.get(str.trim()) ? parseFloat(varMap.get(str.trim())) : console.log(compiler.color("\nError Bad Variable Name: ").error + str.trim()),
+    getVar: str => varMap.get(str.trim()) ? parseFloat(varMap.get(str.trim())) : console.log(compiler.color("\nError Bad Variable Name: ").error + `"${str}"`),
     isOperation: a => a.match(/([-+/*%])/) ? true : false,
     isFunction: a => a.match(/[\S]*\(.*\)/) ? true : false,
     isVariable: a => a.match(/[a-zA-Z_$][a-zA-Z_$0-9]*/) ? true : false
@@ -88,12 +88,12 @@ function evalMath(code) {
         }
     });
     while (match.length > 1) {
-        const x = parseFloat(match[index - 1]) ? parseFloat(match[index - 1]) : c.getVar(match[index - 1]);
-        const y = parseFloat(match[index + 1]) ? parseFloat(match[index + 1]) : c.getVar(match[index + 1]);
         switch (match[index]) {
             case "*":
             case "/":
             case "%":
+                const x = !!parseFloat(match[index - 1]) ? parseFloat(match[index - 1]) : c.getVar(match[index - 1]);
+                const y = !!parseFloat(match[index + 1]) ? parseFloat(match[index + 1]) : c.getVar(match[index + 1]);
                 switch (match[index]) {
                     case "*":
                         match[index + 1] = x * y;
@@ -111,16 +111,18 @@ function evalMath(code) {
                 break;
             case "+":
             case "-":
+                const a = !!parseFloat(match[index - 1]) ? parseFloat(match[index - 1]) : c.getVar(match[index - 1]);
+                const b = !!parseFloat(match[index + 1]) ? parseFloat(match[index + 1]) : c.getVar(match[index + 1]);
                 if (match.includes("*") || match.includes("/") || match.includes("%")) {
                     index += 2;
                 } else {
                     switch (match[index]) {
                         case "-":
-                            match[index + 1] = x - y;
+                            match[index + 1] = a - b;
                             match.splice(index - 1, 2);
                             break;
                         case "+":
-                            match[index + 1] = x + y;
+                            match[index + 1] = a + b;
                             match.splice(index - 1, 2);
                             break;
                     }
@@ -136,19 +138,16 @@ function evalMath(code) {
 
 function evalOps(code) {
     if (c.isOperation(code)) {
-        if (code.includes("(")) {
-            while (c.getLastPar(code)[1] != -1) {
-                const parLast = c.getLastPar(code);
-                const cont = parLast[0];
-                const fIndex = parLast[1];
-                const lIndex = parLast[2];
-                code = c.replaceBetween(code, fIndex, lIndex, evalMath(cont));
-
-            }
+        while (code.includes("(")) {
+            const parLast = c.getLastPar(code);
+            const cont = parLast[0];
+            const fIndex = parLast[1];
+            const lIndex = parLast[2];
+            code = c.replaceBetween(code, fIndex, lIndex, evalMath(cont));
         }
         return evalMath(code);
     } else if (c.isVariable(code)) {
-        return c.getVar(code.trim());
+        return c.getVar(code);
     } else {
         return parseFloat(code);
     }
@@ -166,11 +165,10 @@ function compileCode() { //will return end result
 
             if (c.isEquation(line)) { //if line is a equation 
                 const eq = c.splitEquation(line);
-                const val = eq[eq.length - 1];
+                const val = evalOps(eq[eq.length - 1].trim());
                 eq.pop();
-                //console.log(eq)
                 eq.forEach(varName => {
-                    varMap.set(varName.trim(), evalOps(val));
+                    varMap.set(varName.trim(), val);
                 });
                 //console.log(varMap);
             } else if (c.isFunction(line)) {
