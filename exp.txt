@@ -1,0 +1,56 @@
+Single Line
+Operands:
+	+
+	-
+	/
+	*
+	%
+	**
+Definition:
+	x = x
+	x+=y
+	x=y:y+1
+	x=():5
+	x=(a,b):a*b
+	x= a?b:c
+Special:
+	x?y:z
+	multiply(4,5)
+	print(multiply(5,4))
+Boolean:	
+	x == y
+	x >	y
+	x < y
+	x <= y
+	x >= y
+	
+Multi Line
+Definition:
+	x=(y){
+		return y+1
+	}
+	multiply(a,b){ 
+		return a*b 
+	}
+	<condition>{
+		<result if true>
+	}else{
+		<result if false>
+	}
+	<condition>{
+		<result>
+	}else <condition>{
+		<result>
+	}
+	
+Special Characters:
+	const
+	else
+	return
+	switch
+	case
+	if
+	break
+	try
+	catch
+	
