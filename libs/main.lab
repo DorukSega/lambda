@@ -1,0 +1,8 @@
+// Main Operations
+def add         a  b : a + b
+def subtract    a  b : a - b
+def multiply    a  b : a * b
+def divide      a  b : a / b
+def modulus     a  b : a % b
+def increment   a    : a + 1
+def decrement   a    : a - 1

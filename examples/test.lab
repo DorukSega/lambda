@@ -1,0 +1,1 @@
+def superCoolFunction a : a * 5

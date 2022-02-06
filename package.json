@@ -1,0 +1,5 @@
+{
+  "dependencies": {
+    "read-each-line-sync": "^1.0.5"
+  }
+}

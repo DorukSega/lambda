@@ -1,0 +1,4 @@
+var a 5
+def superCoolFunction a : a * 5
+call superCoolFunction a : a 
+print a 

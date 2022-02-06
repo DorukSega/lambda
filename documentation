@@ -1,0 +1,9 @@
+Functions:
+    var: Defines variables
+        var <varName> <value>
+    drop: Undefines variables
+        drop <varName>
+    print: Prints input
+        print <input>
+    toString: turns a to String
+        addTo <varName>
