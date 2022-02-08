@@ -1,0 +1,18 @@
+// Values
+var PI      3.141592653589793   // Pi value approximated
+var EU      2.718281828459045   // Euler s constant
+var SQRT2   1.4142135623730951  // Square root of 2
+var LN2     0.6931471805599453  // Natural logarithm of 2
+var LN10    2.302585092994046   // Natural logarithm of 10
+var LOG2E   1.4426950408889634  // Base-2 logarithm of E
+var LOG10E  0.4342944819032518  // Base-10 logarithm of E
+var SQRT1_2 0.7071067811865476  // Square root of ½
+
+// Operations
+sqrt    x   : **   x    .5              def
+hypot   x y : sqrt + ** x 2 , y 2       def
+expo    x   : **   EU   x               def
+pow     x y : **   x y                  def
+
+// abs, ceil requires if else
+// cuberoot must be multiline or hardcoded

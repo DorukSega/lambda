@@ -1,8 +1,7 @@
 const path = require('path'),
     readEachLineSync = require('read-each-line-sync')
 
-var mainFile, isRun = false;
-
+var mainFile, isRun = false, genDoc = false, currentLine = 1;
 
 const lang = {
     name: "Lambda",
@@ -17,153 +16,380 @@ const compiler = {
     },
     args: {
         help: "-h",
-        run: "-r"
+        run: "-r",
+        docs: "-d" //generates documentation
     },
     color: string => Object.assign(string, {
         title: "\x1b[33m" + string + "\x1b[0m",
         error: "\x1b[91m" + string + "\x1b[0m",
         code: "\x1b[93m" + string + "\x1b[0m"
-    }),
-    splitExecution: string => string.split(/\s+/),
-    isOperand: string => {
-        switch (string) {
-            case "+":
-            case "-":
-            case "/":
-            case "*":
-            case "%":
-            case "(":
-            case ")":
-            case "**":
-            case "+=":
-            case "-=":
-            case "*=":
-            case "/=":
-            case "%=":
-            case "**=":
-            case "==":
-            case "!=":
-            case ">":
-            case ">=":
-            case "<":
-            case "<=":
-            case "++":
-            case "--":
-            case "&&":
-            case "||":
-            case "!":
-            case "?":
-            case ":":
-            case ",":
-            case "true":
-            case "false":
-            case '"':
-            case "'":
-            case ".":
-                return true;
-            default:
-                return false;
-        }
-    },
-    isString: string => (string.startsWith("'") && string.endsWith("'")) || (string.startsWith('"') && string.endsWith('"')),
-    isComment: string => (string.startsWith("//")),
-    argSplitter: args => {
-        for (var i = 0, inArr = [], result = []; i < args.length; i++) {
-            if (args[i] != ",") { //true is number
-                inArr.push(args[i]);
+    })
+}
+
+class lObject {
+    constructor(data) {
+        if (isVariable(data)) { // is variable
+            const variable = varMap.get(data);
+            this.type = variable.type;
+            this.raw = variable.raw;
+        } else if (!isNaN(data)) {
+            const dataConverted = parseFloat(data);
+            if (Number.isInteger(dataConverted)) {
+                this.numType = "Integer";
+                this.type = "Number";
+                this.raw = dataConverted;
             } else {
-                result.push(inArr);
-                inArr = [];
+                this.numType = "Float";
+                this.type = "Number";
+                this.raw = dataConverted;
             }
-        }
-        result.push(inArr);
-        return result;
-    },
-    customSplitter: (args, splitAt) => {
-        for (var i = 0, inArr = [], result = []; i < args.length; i++) {
-            if (args[i] != splitAt) { //true is number
-                inArr.push(args[i]);
-            } else {
-                result.push(inArr);
-                inArr = [];
-            }
-        }
-        result.push(inArr);
-        return result;
-    },
-    eval: args => {
-        args = !Array.isArray(args) ? [args] : args;
-        if (compiler.isString(args.join(""))) {
-            return args.join("").substring(1, args.join("").length - 1);
+        } else if (isString(data)) {
+            this.type = "String";
+            this.raw = String(data.slice(1, data.length - 1));
+        } else if (isBool(data)) {
+            this.type = "Boolean";
+            if (data == "true")
+                this.raw = true;
+            else
+                this.raw = false;
         } else {
-            args.forEach((arg, i) => {
-                if (!compiler.isOperand(arg) && isNaN(arg) && !compiler.isString(arg)) { //checks if variable
-                    if (varMap.has(arg)) {
-                        args[i] = varMap.get(arg)
-                    } else {
-                        throw `Variable ${arg} is undefined`
-                    }
-                }
-            })
-            return eval(args.join("")); //use something other than eval()
+            throw `"${data}" is a unknown data type\n at line ${currentLine}`
         }
     }
 }
 
-const varMap = new Map();
+const splitExecution = string => string.match(/(?=([^\"\']*(\"|\')[^\"\']*(\"|\'))*[^\"\']*$)(\S|\".*?\"|\'.*?\')+(?=([^\"\']*(\"|\')[^\"\']*(\"|\'))*[^\"\']*$)/g);
 
-const h = { // hardcoded
-    import: args => args.forEach(innArr => {
-        if (compiler.isString(innArr[0])) {
-            const loc = innArr.substring(1, innArr.length - 1);
-            compileCode(path.join(path.dirname(mainFile), loc));
+const varMap = new Map();
+const funcMap = new Map();
+
+const unvalids = [",", ":"]; // stuff you cant assign as a variable or function
+
+const isVariable = name => varMap.has(name);
+const isFunction = name => funcMap.has(name);
+const isString = string => (string.startsWith("'") && string.endsWith("'")) || (string.startsWith('"') && string.endsWith('"'));
+const isBool = str => str == "true" || str == "false";
+const isValid = name => {
+    if (!isFunction(name) && !unvalids.includes(name) && isNaN(name)) //change it to just unvalids maybe
+        return true
+    else
+        return false
+};
+
+const typify = a => typeof (a) == "string" ? `"${a}"` : a;
+
+const customSplitter = (args, splitAt) => {
+    for (var i = 0, inArr = [], result = []; i < args.length; i++) {
+        if (args[i] != splitAt) { //true is number
+            inArr.push(args[i]);
         } else {
-            //maybe base libraries here?
-            const loc = innArr;
-            compileCode(path.join("/libs", loc + ".lab"));
-            //console.log("not yet implemented");
+            result.push(inArr);
+            inArr = [];
         }
-    }),
-    print: args => compiler.argSplitter(args).forEach(innArr => {
-        console.log(compiler.eval(innArr));
-    }),
-    var: args => compiler.argSplitter(args).forEach(innArr => {
-        varMap.set(innArr[0], compiler.eval(innArr.splice(1)));
-    }),
-    /*addTo: args => compiler.argSplitter(args).forEach(innArr => {
-        varMap.set(innArr[0], compiler.eval(varMap.get(innArr[0])) + compiler.eval(innArr.splice(1)));
-    }),*/
-    drop: args => compiler.argSplitter(args).forEach(innArr => {
-        varMap.delete(innArr[0]);
-    }),
-    toString: args => compiler.argSplitter(args).forEach(innArr => {
-        if (!isNaN(varMap.get(innArr[0]))) {
-            varMap.set(innArr[0], `"${varMap.get(innArr[0])}"`)
-        }
-    }),
-    def: args => compiler.argSplitter(args).forEach(innArr => {
-        const funcName = innArr[0];
-        const rest = compiler.customSplitter(innArr.splice(1), ":");
-        rest[0].forEach((funcArg, i) => {
-            rest[1].forEach((el, j) => {
-                rest[1][j] = el == funcArg ? `args.arg${i}` : el
-            });
-        });
-        const funcOper = rest[1].join("");
-        varMap.set(funcName, eval(`args=>${funcOper}`));
-    }),
-    call: args => compiler.argSplitter(args).forEach(innArr => {
-        const funcName = innArr[0];
-        const rest = compiler.customSplitter(innArr.splice(1), ":");
-        const funcAssign = rest[0].join("");
-        var argies = {}
-        rest[1].forEach((funcArg, i) => {
-            Object.defineProperty(argies, `arg${i}`, { value: compiler.eval(funcArg) });
-        });
-        varMap.set(funcAssign, varMap.get(funcName)(argies));
-    }),
+    }
+    result.push(inArr);
+    return result;
 }
 
+function readData(data) { //reads data that is probably processed by compiler
+    if (typeof data == "string") { //this means it is raw
+        data = new lObject(data);
+        return data.raw;
+    } else { //this is a Number or Boolean
+        return data;
+    }
+}
+
+//hardcoded functions
+funcMap.set(
+    "print", //prints single value & works inline
+    {
+        argCount: 1,
+        args: ["data"],
+        action: ents => {
+            console.log(readData(ents[0]));
+            return typify(ents[0]); //returns inline
+        }
+    }
+).set(
+    "prints", //prints more than one value & won't work inline
+    {
+        argCount: Infinity,
+        args: ["data"],
+        action: ents => {
+            ents.forEach(el => { //Might cause problems
+                console.log(readData(el));
+            });
+            return ""; //DECIDE "" or typify(ents[0])
+        }
+    }
+).set(
+    "var",
+    {
+        argCount: 2,
+        args: ["variable", "data"],
+        action: ents => {
+            if (isValid(ents[0])) {
+                const assigned = ents[0];
+                const assignee = new lObject(ents[1]);
+                varMap.set(assigned, assignee);
+                return typify(assignee.raw);
+            } else {
+                throw `"${ents[0]}" is not a valid entry\n at line ${currentLine}`
+            }
+        }
+    }
+).set(
+    "drop",
+    {
+        argCount: 1,
+        args: ["variable"],
+        action: ents => {
+            if (isVariable(ents[0])) {
+                varMap.delete(ents[0]);
+                return ""; //returns void for obv reasons
+            } else {
+                throw `"${ents[0]}" is not a variable\n at line ${currentLine}`
+            }
+        }
+    }
+).set(
+    "import",
+    {
+        argCount: Infinity,
+        args: ["lib"],
+        action: ents => {
+            ents.forEach(el => {
+                if (isString(el)) { // > "library.lab"
+                    const lib = new lObject(el);
+                    compileCode(path.join(path.dirname(mainFile), lib.raw));
+                } else { // > library
+                    //base libraries
+                    const lib = el;
+                    compileCode(path.join("/libs", lib + ".lab")); //will reach from compiler location
+                    //console.log("not yet implemented");
+                }
+
+            });
+            return ""; //returns void for obv reasons
+        }
+    }
+).set(
+    "toString",
+    {
+        argCount: 1,
+        args: ["data"],
+        action: ents => {
+            const data = new lObject(ents[0]);
+            return `"${data.raw}"`;
+        }
+    }
+).set(
+    "+",
+    {
+        argCount: 2,
+        args: ["first", "second"],
+        action: ents => {
+            const a = new lObject(ents[0]), b = new lObject(ents[1]);
+            return typify(a.raw + b.raw);
+
+        }
+    }
+).set(
+    "-",
+    {
+        argCount: 2,
+        args: ["first", "second"],
+        action: ents => {
+            const a = new lObject(ents[0]), b = new lObject(ents[1]);
+            return typify(a.raw - b.raw);
+        }
+    }
+).set(
+    "/",
+    {
+        argCount: 2,
+        args: ["first", "second"],
+        action: ents => {
+            const a = new lObject(ents[0]), b = new lObject(ents[1]);
+            return typify(a.raw / b.raw);
+        }
+    }
+).set(
+    "*",
+    {
+        argCount: 2,
+        args: ["first", "second"],
+        action: ents => {
+            const a = new lObject(ents[0]), b = new lObject(ents[1]);
+            return typify(a.raw * b.raw);
+        }
+    }
+).set(
+    "%",
+    {
+        argCount: 2,
+        args: ["first", "second"],
+        action: ents => {
+            const a = new lObject(ents[0]), b = new lObject(ents[1]);
+            return typify(a.raw % b.raw);
+        }
+    }
+).set(
+    "**",
+    {
+        argCount: 2,
+        args: ["first", "second"],
+        action: ents => {
+            const a = new lObject(ents[0]), b = new lObject(ents[1]);
+            return typify(a.raw ** b.raw); // or write a loop
+        }
+    }
+).set(
+    "!", // negate
+    {
+        argCount: 1,
+        args: ["value"],
+        action: ents => {
+            const a = new lObject(ents[0]);
+            if (typeof (a) == "Boolean")
+                return typify(!a.raw); // js specific
+            else
+                return typify(-a.raw)
+        }
+    }
+).set(
+    "=",
+    {
+        argCount: 2,
+        args: ["first", "second"],
+        action: ents => {
+            const a = ents[0], b = new lObject(ents[1]);
+            if (isVariable(a)) {
+                varMap.set(a, b);
+                return typify(b.raw); //returns the end result
+            } else
+                throw `"${a}" is not a variable\n at line ${currentLine}`
+        }
+    }
+).set(
+    "void",
+    {
+        argCount: 1,
+        args: ["value"],
+        action: () => { } //returns nothing
+    }
+).set(
+    "voidI",
+    {
+        argCount: Infinity,
+        args: ["value"],
+        action: () => { } //returns nothing
+    }
+)
+
+function evaluate(args) { //evaluates the given code
+    args = !Array.isArray(args) ? [args] : args;
+    for (let i = 0; i < args.length; i++) {
+        const argsLast = args.length - 1; // index of last element 
+        const revI = argsLast - i; // i but reversed, so 0 is last el
+        const data = args[revI]; // data
+        if (isFunction(data)) { // if split arguments with ","
+            const func = funcMap.get(data); //function
+            if (args[revI + func.argCount + 1] == ",") {
+                const allArgs = customSplitter(args.slice(revI + 1), ",");
+                for (let j = 0; j < allArgs.length; j++) {
+                    const revJ = allArgs.length - 1 - j;
+                    var iArgs = allArgs[revJ];
+                    iArgs = iArgs.slice(0, func.argCount); //arguments used by function
+                    var result;
+                    if (func.action)
+                        result = func.action(iArgs);
+                    else {
+                        var newCode = func.code;
+                        func.args.forEach((e1, z) => {
+                            newCode.forEach((e2, k) => {
+                                newCode[k] = newCode[k] == e1 ? iArgs[z] : e2;
+                            });
+                        });
+                        result = evaluate(newCode);
+                    }
+                    if (result != undefined)
+                        args.splice(revI + revJ * (func.argCount + 1), func.argCount + 1, result); // replaces for each ,
+                    else
+                        args.splice(revI + revJ * (func.argCount + 1), func.argCount + 1); // replaces for each ,
+                }
+            } else { // if single
+                const iArgs = args.slice(revI + 1, revI + 1 + func.argCount); // arguments used by function
+                var result;
+                if (func.action)
+                    result = func.action(iArgs);
+                else {
+                    var newCode = func.code;
+                    func.args.forEach((e1, z) => {
+                        newCode.forEach((e2, k) => {
+                            newCode[k] = newCode[k] == e1 ? iArgs[z] : e2;
+                        });
+                    });
+                    result = evaluate(newCode);
+                }
+                if (result != undefined)
+                    args.splice(revI, func.argCount + 1, result);
+                else
+                    args.splice(revI, func.argCount + 1);
+            }
+            i = -1; // goes back to end
+        } else if (data == "def") {
+            const argsNodefsplit = customSplitter(args.slice(0, revI), ":");
+            const funcName = argsNodefsplit[0][0];
+            if (!unvalids.includes(funcName) && isNaN(funcName)) {
+                const newArgs = argsNodefsplit[0].slice(1);
+                funcMap.set(funcName, {
+                    argCount: newArgs.length,
+                    args: newArgs,
+                    code: argsNodefsplit[1]
+                });
+            }
+            break;
+        }
+    }
+    return args[0];
+}
+
+function compileCode(fileName) {
+    try {
+        readEachLineSync(path.join(__dirname, fileName), 'utf8', function (line) {
+            if (/\S+/.test(line)) { // checks if not empty line
+                var lineSplit = splitExecution(line);
+                if (lineSplit.includes("//")) // this ignores comments
+                    for (let i = 0; i < lineSplit.length; i++) {
+                        if (lineSplit[i] == "//") {
+                            lineSplit = lineSplit.slice(0, i);
+                            break;
+                        }
+                    }
+                if (fileName == mainFile && !line.startsWith("//") && /\S+/.test(line)) { console.log(compiler.color(`> ${lineSplit.join(" ")}`).code); }
+                evaluate(lineSplit); //Most Important Moment 👀
+            }
+            if (fileName == mainFile) { currentLine++; }
+        });
+        if (genDoc) {
+            const fs = require('fs')
+            const logger = fs.createWriteStream('doc.txt', { flags: 'w' })
+            logger.write("<FunctionName> : <arg1> <arg2> ...\n");
+            funcMap.forEach((val, key) => {
+                var argumenty = "";
+                val.args.forEach(arg => argumenty += ` <${arg}> `);
+                if (val.argCount == Infinity)
+                    argumenty += " ... "
+                logger.write("\n" + `${key} :` + argumenty);
+            });
+            logger.close();
+        }
+    } catch (err) {
+        console.error(err);
+    }
+}
 
 if (process.argv.length > 2) {
     const args = process.argv.slice(2); //all the arguments
@@ -182,6 +408,9 @@ if (process.argv.length > 2) {
                 case compiler.args.run: //-r is triggered
                     isRun = true;
                     break;
+                case compiler.args.docs: //-d is triggered
+                    genDoc = true;
+                    break;
                 default:
                     console.error(compiler.color("\nError Bad Argument:").error + ` ${arg}`)
                     break;
@@ -189,8 +418,9 @@ if (process.argv.length > 2) {
         }
     });
     if (mainFile != undefined) {
-        compileCode(path.join("/libs", "main.lab")); //always imported?
+        //compileCode(path.join("/libs", "main.lab")); //DECIDE always imported?
         compileCode(mainFile);
+
     } else {
         console.error(compiler.color("\nError No File Argument").error + "\nenter a file as " +
             compiler.color(`${compiler.name} ${lang.sName} ${compiler.fileMatch.code}`).code);
@@ -198,19 +428,4 @@ if (process.argv.length > 2) {
 } else {
     console.error(`${compiler.color("\nError Missing Arguments").error} 
     To learn more run ${compiler.color(`${compiler.name} ${lang.sName} ${compiler.args.help}`).code}`);
-}
-
-function compileCode(fileName) {
-    try {
-        readEachLineSync(path.join(__dirname, fileName), 'utf8', function (line) {
-            if (fileName == mainFile && !compiler.isComment(line)) { console.log(compiler.color(`> ${line}`).code); }
-            if (/\S+/.test(line) && !compiler.isComment(line)) { //checks if not empty line
-                const lineSplit = compiler.splitExecution(line);
-                const action = lineSplit[0];
-                h[action](lineSplit.splice(1));
-            }
-        })
-    } catch (err) {
-        console.error(err);
-    }
 }

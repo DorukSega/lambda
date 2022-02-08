@@ -1,0 +1,4 @@
+// Example that calculates hypotenuse of a classic 3-4-5 triangle
+import math         // calls the builtin math lib
+var    x 3 , y 4    // defines a variable x as 3 and a variable y as 4
+print  hypot x y    // calls the hypotenuse function and prints the hypotenuse of x and y

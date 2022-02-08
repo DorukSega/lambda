@@ -1,11 +1,7 @@
 Plans
- var a b = 5 6
- var x = "example"
- print a b		> "56"
- print a " " b		> "5 6"
- print 5 " " "example"	> "5 example"
- 
- 
- add a b		> a will be 11   
- add a 5		> a will be 10
-  
+ Make a inline variables for function
+ Make a throw function that throws a error if false
+ Test booleans and add Boolean operations
+ If Else If Else
+ Random value function
+ Comments break when single quote > '
