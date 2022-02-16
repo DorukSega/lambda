@@ -1,40 +1,18 @@
 //Bunch of examples written to test the language
 //Make sure to Implement a throw
 // String + integer
-print + " gamer " 5
+print + " word " 5
 
-//Complex  example
-print + * 2 5 6 , 3 4
+//Hypotenus
+var a 3
+var b 4
+print ** + ** a 2 ** b 2 .5
 
 //Negative example
 print + 6 -5
 print + 6 ! 5
 print + 6 ! -5
 
-//Import  Math
-import math
-
-//Area of a Square
-var a 3 , b 4 
-var c sqrt + ** a 2 , b 2 
-print + + + " " toString a + " " toString b + " " toString c
-
 //Void
 prints 5 void 6 + 5 2 
 prints 5 voidI 6 + 5 2 
-
-
-prints PI EU SQRT2 LN2 LN10 LOG2E LOG10E SQRT1_2
-print sqrt 4
-print hypot 3 4
-print expo 4
-print pow 2 4
-
-//Function Definition Examples
-hypot1 x y : sqrt + ** x 2 , y 2  def //function that just returns the result
-hypot2 x y :  void var z sqrt + ** x 2 , y 2  def // assigns it to a third z variable
-
-print hypot1 3 4 // > 5
-
-hypot2 3 4 // > z = 5
-print z // > 5

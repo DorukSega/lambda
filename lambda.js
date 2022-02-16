@@ -1,431 +1,488 @@
-const path = require('path'),
-    readEachLineSync = require('read-each-line-sync')
-
-var mainFile, isRun = false, genDoc = false, currentLine = 1;
-
-const lang = {
-    name: "Lambda",
-    sName: "lambda"
-}
-
-const compiler = {
-    name: "node",
-    fileMatch: {
-        code: "*.lab",
-        regex: /.*\w\.lab/i
-    },
-    args: {
-        help: "-h",
-        run: "-r",
-        docs: "-d" //generates documentation
-    },
-    color: string => Object.assign(string, {
-        title: "\x1b[33m" + string + "\x1b[0m",
-        error: "\x1b[91m" + string + "\x1b[0m",
-        code: "\x1b[93m" + string + "\x1b[0m"
-    })
-}
-
-class lObject {
-    constructor(data) {
-        if (isVariable(data)) { // is variable
-            const variable = varMap.get(data);
-            this.type = variable.type;
-            this.raw = variable.raw;
-        } else if (!isNaN(data)) {
-            const dataConverted = parseFloat(data);
-            if (Number.isInteger(dataConverted)) {
-                this.numType = "Integer";
-                this.type = "Number";
-                this.raw = dataConverted;
-            } else {
-                this.numType = "Float";
-                this.type = "Number";
-                this.raw = dataConverted;
-            }
-        } else if (isString(data)) {
-            this.type = "String";
-            this.raw = String(data.slice(1, data.length - 1));
-        } else if (isBool(data)) {
-            this.type = "Boolean";
-            if (data == "true")
-                this.raw = true;
-            else
-                this.raw = false;
-        } else {
-            throw `"${data}" is a unknown data type\n at line ${currentLine}`
-        }
+"use strict";
+const path = require('path'), readEachLineSync = require('read-each-line-sync');
+// Validates from string to Lambda Type
+const validLString = (obj) => /\".*\"|\'.*\'/.test(obj), //catches any string "" or ''
+validLBoolean = (obj) => /true|false/.test(obj), validLNumber = (obj) => !isNaN(Number(obj)), validLName = (obj) => /^(_|\$|[A-z])(_|\$|[A-z]|[0-9]?)+$/.test(obj), validLOperator = (obj) => {
+    switch (obj) { //add more here as you add more operators
+        case '+':
+        case '-':
+        case '*':
+        case '/':
+        case '%':
+        case '**':
+        case '!':
+        case '=':
+            return true;
+        default:
+            return false;
     }
-}
-
-const splitExecution = string => string.match(/(?=([^\"\']*(\"|\')[^\"\']*(\"|\'))*[^\"\']*$)(\S|\".*?\"|\'.*?\')+(?=([^\"\']*(\"|\')[^\"\']*(\"|\'))*[^\"\']*$)/g);
-
-const varMap = new Map();
-const funcMap = new Map();
-
-const unvalids = [",", ":"]; // stuff you cant assign as a variable or function
-
-const isVariable = name => varMap.has(name);
-const isFunction = name => funcMap.has(name);
-const isString = string => (string.startsWith("'") && string.endsWith("'")) || (string.startsWith('"') && string.endsWith('"'));
-const isBool = str => str == "true" || str == "false";
-const isValid = name => {
-    if (!isFunction(name) && !unvalids.includes(name) && isNaN(name)) //change it to just unvalids maybe
-        return true
-    else
-        return false
+}, validLCustom = (obj) => {
+    switch (obj) {
+        case "if":
+        case "else":
+        case "def":
+        case ":":
+        case ",":
+        case "end":
+            return true;
+        default:
+            return false;
+    }
 };
-
-const typify = a => typeof (a) == "string" ? `"${a}"` : a;
-
-const customSplitter = (args, splitAt) => {
-    for (var i = 0, inArr = [], result = []; i < args.length; i++) {
-        if (args[i] != splitAt) { //true is number
-            inArr.push(args[i]);
-        } else {
-            result.push(inArr);
-            inArr = [];
-        }
-    }
-    result.push(inArr);
-    return result;
-}
-
-function readData(data) { //reads data that is probably processed by compiler
-    if (typeof data == "string") { //this means it is raw
-        data = new lObject(data);
-        return data.raw;
-    } else { //this is a Number or Boolean
-        return data;
-    }
-}
-
-//hardcoded functions
-funcMap.set(
-    "print", //prints single value & works inline
-    {
-        argCount: 1,
-        args: ["data"],
-        action: ents => {
-            console.log(readData(ents[0]));
-            return typify(ents[0]); //returns inline
-        }
-    }
-).set(
-    "prints", //prints more than one value & won't work inline
-    {
-        argCount: Infinity,
-        args: ["data"],
-        action: ents => {
-            ents.forEach(el => { //Might cause problems
-                console.log(readData(el));
+const compArguments = new Map().set("-h", "list all commands and help").set("-d", "generate docs from code").set("-s", "show the code as interpreted");
+// if false it will not eval until <end>
+var runningStatus = true, currentLine = 1, mainFiles = [], isShow = false, genDoc = false;
+const operators = [{
+        name: "+",
+        type: "operator",
+        argCount: 2,
+        action: (ents) => {
+            ents.forEach((el, i) => {
+                ents[i] = vLObject(ents[i]);
             });
-            return ""; //DECIDE "" or typify(ents[0])
-        }
-    }
-).set(
-    "var",
-    {
-        argCount: 2,
-        args: ["variable", "data"],
-        action: ents => {
-            if (isValid(ents[0])) {
-                const assigned = ents[0];
-                const assignee = new lObject(ents[1]);
-                varMap.set(assigned, assignee);
-                return typify(assignee.raw);
-            } else {
-                throw `"${ents[0]}" is not a valid entry\n at line ${currentLine}`
-            }
-        }
-    }
-).set(
-    "drop",
-    {
-        argCount: 1,
-        args: ["variable"],
-        action: ents => {
-            if (isVariable(ents[0])) {
-                varMap.delete(ents[0]);
-                return ""; //returns void for obv reasons
-            } else {
-                throw `"${ents[0]}" is not a variable\n at line ${currentLine}`
-            }
-        }
-    }
-).set(
-    "import",
-    {
-        argCount: Infinity,
-        args: ["lib"],
-        action: ents => {
-            ents.forEach(el => {
-                if (isString(el)) { // > "library.lab"
-                    const lib = new lObject(el);
-                    compileCode(path.join(path.dirname(mainFile), lib.raw));
-                } else { // > library
-                    //base libraries
-                    const lib = el;
-                    compileCode(path.join("/libs", lib + ".lab")); //will reach from compiler location
-                    //console.log("not yet implemented");
-                }
-
-            });
-            return ""; //returns void for obv reasons
-        }
-    }
-).set(
-    "toString",
-    {
-        argCount: 1,
-        args: ["data"],
-        action: ents => {
-            const data = new lObject(ents[0]);
-            return `"${data.raw}"`;
-        }
-    }
-).set(
-    "+",
-    {
-        argCount: 2,
-        args: ["first", "second"],
-        action: ents => {
-            const a = new lObject(ents[0]), b = new lObject(ents[1]);
-            return typify(a.raw + b.raw);
-
-        }
-    }
-).set(
-    "-",
-    {
-        argCount: 2,
-        args: ["first", "second"],
-        action: ents => {
-            const a = new lObject(ents[0]), b = new lObject(ents[1]);
-            return typify(a.raw - b.raw);
-        }
-    }
-).set(
-    "/",
-    {
-        argCount: 2,
-        args: ["first", "second"],
-        action: ents => {
-            const a = new lObject(ents[0]), b = new lObject(ents[1]);
-            return typify(a.raw / b.raw);
-        }
-    }
-).set(
-    "*",
-    {
-        argCount: 2,
-        args: ["first", "second"],
-        action: ents => {
-            const a = new lObject(ents[0]), b = new lObject(ents[1]);
-            return typify(a.raw * b.raw);
-        }
-    }
-).set(
-    "%",
-    {
-        argCount: 2,
-        args: ["first", "second"],
-        action: ents => {
-            const a = new lObject(ents[0]), b = new lObject(ents[1]);
-            return typify(a.raw % b.raw);
-        }
-    }
-).set(
-    "**",
-    {
-        argCount: 2,
-        args: ["first", "second"],
-        action: ents => {
-            const a = new lObject(ents[0]), b = new lObject(ents[1]);
-            return typify(a.raw ** b.raw); // or write a loop
-        }
-    }
-).set(
-    "!", // negate
-    {
-        argCount: 1,
-        args: ["value"],
-        action: ents => {
-            const a = new lObject(ents[0]);
-            if (typeof (a) == "Boolean")
-                return typify(!a.raw); // js specific
+            if (ents[0].type == "string" || ents[1].type == "string") //if either one is string, turns it to string
+                return stringify(ents[0].value + ents[1].value);
             else
-                return typify(-a.raw)
+                return typifyLsingle(String(ents[0].value + ents[1].value));
         }
-    }
-).set(
-    "=",
+    },
     {
+        name: "-",
+        type: "operator",
         argCount: 2,
-        args: ["first", "second"],
-        action: ents => {
-            const a = ents[0], b = new lObject(ents[1]);
-            if (isVariable(a)) {
-                varMap.set(a, b);
-                return typify(b.raw); //returns the end result
-            } else
-                throw `"${a}" is not a variable\n at line ${currentLine}`
-        }
-    }
-).set(
-    "void",
-    {
-        argCount: 1,
-        args: ["value"],
-        action: () => { } //returns nothing
-    }
-).set(
-    "voidI",
-    {
-        argCount: Infinity,
-        args: ["value"],
-        action: () => { } //returns nothing
-    }
-)
-
-function evaluate(args) { //evaluates the given code
-    args = !Array.isArray(args) ? [args] : args;
-    for (let i = 0; i < args.length; i++) {
-        const argsLast = args.length - 1; // index of last element 
-        const revI = argsLast - i; // i but reversed, so 0 is last el
-        const data = args[revI]; // data
-        if (isFunction(data)) { // if split arguments with ","
-            const func = funcMap.get(data); //function
-            if (args[revI + func.argCount + 1] == ",") {
-                const allArgs = customSplitter(args.slice(revI + 1), ",");
-                for (let j = 0; j < allArgs.length; j++) {
-                    const revJ = allArgs.length - 1 - j;
-                    var iArgs = allArgs[revJ];
-                    iArgs = iArgs.slice(0, func.argCount); //arguments used by function
-                    var result;
-                    if (func.action)
-                        result = func.action(iArgs);
-                    else {
-                        var newCode = func.code;
-                        func.args.forEach((e1, z) => {
-                            newCode.forEach((e2, k) => {
-                                newCode[k] = newCode[k] == e1 ? iArgs[z] : e2;
-                            });
-                        });
-                        result = evaluate(newCode);
-                    }
-                    if (result != undefined)
-                        args.splice(revI + revJ * (func.argCount + 1), func.argCount + 1, result); // replaces for each ,
-                    else
-                        args.splice(revI + revJ * (func.argCount + 1), func.argCount + 1); // replaces for each ,
-                }
-            } else { // if single
-                const iArgs = args.slice(revI + 1, revI + 1 + func.argCount); // arguments used by function
-                var result;
-                if (func.action)
-                    result = func.action(iArgs);
-                else {
-                    var newCode = func.code;
-                    func.args.forEach((e1, z) => {
-                        newCode.forEach((e2, k) => {
-                            newCode[k] = newCode[k] == e1 ? iArgs[z] : e2;
-                        });
-                    });
-                    result = evaluate(newCode);
-                }
-                if (result != undefined)
-                    args.splice(revI, func.argCount + 1, result);
-                else
-                    args.splice(revI, func.argCount + 1);
-            }
-            i = -1; // goes back to end
-        } else if (data == "def") {
-            const argsNodefsplit = customSplitter(args.slice(0, revI), ":");
-            const funcName = argsNodefsplit[0][0];
-            if (!unvalids.includes(funcName) && isNaN(funcName)) {
-                const newArgs = argsNodefsplit[0].slice(1);
-                funcMap.set(funcName, {
-                    argCount: newArgs.length,
-                    args: newArgs,
-                    code: argsNodefsplit[1]
-                });
-            }
-            break;
-        }
-    }
-    return args[0];
-}
-
-function compileCode(fileName) {
-    try {
-        readEachLineSync(path.join(__dirname, fileName), 'utf8', function (line) {
-            if (/\S+/.test(line)) { // checks if not empty line
-                var lineSplit = splitExecution(line);
-                if (lineSplit.includes("//")) // this ignores comments
-                    for (let i = 0; i < lineSplit.length; i++) {
-                        if (lineSplit[i] == "//") {
-                            lineSplit = lineSplit.slice(0, i);
-                            break;
-                        }
-                    }
-                if (fileName == mainFile && !line.startsWith("//") && /\S+/.test(line)) { console.log(compiler.color(`> ${lineSplit.join(" ")}`).code); }
-                evaluate(lineSplit); //Most Important Moment 👀
-            }
-            if (fileName == mainFile) { currentLine++; }
-        });
-        if (genDoc) {
-            const fs = require('fs')
-            const logger = fs.createWriteStream('doc.txt', { flags: 'w' })
-            logger.write("<FunctionName> : <arg1> <arg2> ...\n");
-            funcMap.forEach((val, key) => {
-                var argumenty = "";
-                val.args.forEach(arg => argumenty += ` <${arg}> `);
-                if (val.argCount == Infinity)
-                    argumenty += " ... "
-                logger.write("\n" + `${key} :` + argumenty);
+        action: (ents) => {
+            ents.forEach((el, i) => {
+                ents[i] = vLObject(ents[i]);
             });
-            logger.close();
+            return typifyLsingle(String(ents[0].value - ents[1].value));
         }
-    } catch (err) {
-        console.error(err);
+    },
+    {
+        name: "*",
+        type: "operator",
+        argCount: 2,
+        action: (ents) => {
+            ents.forEach((el, i) => {
+                ents[i] = vLObject(ents[i]);
+            });
+            return typifyLsingle(String(ents[0].value * ents[1].value));
+        }
+    },
+    {
+        name: "/",
+        type: "operator",
+        argCount: 2,
+        action: (ents) => {
+            ents.forEach((el, i) => {
+                ents[i] = vLObject(ents[i]);
+            });
+            return typifyLsingle(String(ents[0].value / ents[1].value));
+        }
+    },
+    {
+        name: "%",
+        type: "operator",
+        argCount: 2,
+        action: (ents) => {
+            ents.forEach((el, i) => {
+                ents[i] = vLObject(ents[i]);
+            });
+            return typifyLsingle(String(ents[0].value % ents[1].value));
+        }
+    },
+    {
+        name: "**",
+        type: "operator",
+        argCount: 2,
+        action: (ents) => {
+            ents.forEach((el, i) => {
+                ents[i] = vLObject(ents[i]);
+            });
+            return typifyLsingle(String(ents[0].value ** ents[1].value));
+        }
+    },
+    {
+        name: "!",
+        type: "operator",
+        argCount: 1,
+        action: (ents) => {
+            ents.forEach((el, i) => {
+                ents[i] = vLObject(ents[i]);
+            });
+            if (ents[0].type === "boolean")
+                return typifyLsingle(String(!ents[0].value)); // js specific
+            else
+                return typifyLsingle(String(-ents[0].value));
+        }
+    },
+    {
+        name: "=",
+        type: "operator",
+        argCount: 2,
+        action: (ents) => {
+            if (storedObjects.some(el => el.name === ents[0].value)) {
+                const newVar = {
+                    name: ents[0].value,
+                    type: "variable",
+                    object: vLObject(ents[1])
+                };
+                storedObjects = storedObjects.map(el => el.name === ents[0].value ? newVar : el);
+                return newVar.object;
+            }
+            else
+                throw `"${ents[0].value}" is not a variable\n at line ${currentLine}`;
+        }
+    },
+];
+//Map that contains all the Variables in Storage
+var storedObjects = [{
+        name: "test",
+        type: "variable",
+        object: { type: "string", value: "test" }
+    },
+    {
+        name: "import",
+        type: "function",
+        args: ["..."],
+        argCount: Infinity,
+        action: (ents) => {
+            ents.forEach(lib => {
+                if (lib.type == "string") { // > "library.lab"
+                    readEvalFile(path.join(path.dirname(mainFiles), lib.value));
+                }
+                else if (lib.type == "name") { // > library , will apply to ValidLName ruleset
+                    //base libraries
+                    readEvalFile(path.join("/libs", lib.value + ".lab")); //will reach from compiler location
+                }
+            });
+            return {
+                type: "void",
+                value: "void"
+            }; //returns void for obv reasons
+        }
+    },
+    {
+        name: "print",
+        type: "function",
+        args: ["object"],
+        argCount: 1,
+        action: (ents) => {
+            ents[0] = vLObject(ents[0]);
+            console.log(ents[0].value);
+            return ents[0];
+        }
+    },
+    {
+        name: "prints",
+        type: "function",
+        args: ["..."],
+        argCount: Infinity,
+        action: (ents) => {
+            ents.forEach((el, i) => {
+                console.log(vLObject(el).value);
+            });
+            return {
+                type: "void",
+                value: "void"
+            };
+        }
+    },
+    {
+        name: "var",
+        type: "function",
+        args: ["variable", "object"],
+        argCount: 2,
+        action: (ents) => {
+            const newVar = {
+                name: ents[0].value,
+                type: "variable",
+                object: vLObject(ents[1])
+            };
+            storedObjects.push(newVar);
+            return newVar.object;
+        }
+    },
+    {
+        name: "drop",
+        type: "function",
+        args: ["variable"],
+        argCount: 1,
+        action: (ents) => {
+            if (storedObjects.some(el => el.name === ents[0].value)) {
+                storedObjects.splice(storedObjects.findIndex(el => el.name === ents[0].value), 1);
+                return {
+                    type: "void",
+                    value: "void"
+                };
+            }
+            else {
+                throw `"${ents[0].value}" is not a variable\n at line ${currentLine}`;
+            }
+        }
+    },
+    {
+        name: "void",
+        type: "function",
+        args: ["object"],
+        argCount: 1,
+        action: () => {
+            return {
+                type: "void",
+                value: "void"
+            };
+        }
+    },
+    {
+        name: "voidI",
+        type: "function",
+        args: ["..."],
+        argCount: Infinity,
+        action: () => {
+            return {
+                type: "void",
+                value: "void"
+            };
+        }
+    },
+    {
+        name: "stringTo",
+        type: "function",
+        args: [".object"],
+        argCount: 1,
+        action: (ents) => {
+            ents[0] = vLObject(ents[0]);
+            return stringify(ents[0].value);
+        }
+    }
+];
+function stringify(string) {
+    return {
+        type: "string",
+        value: String(string)
+    };
+}
+function vLObject(obj) {
+    if (obj.type === "name" && storedObjects.some(el => el.name === obj.value)) {
+        const named = storedObjects.find(el => el.name === obj.value);
+        if ((named === null || named === void 0 ? void 0 : named.type) == "variable") {
+            return named === null || named === void 0 ? void 0 : named.object;
+        }
+        else {
+            return typifyLsingle("<function>"); //returns a function string
+        }
+    }
+    else if (obj.type === "name" && !storedObjects.some(el => el.name === obj.value)) {
+        return {
+            type: "undefined",
+            value: "undefined"
+        };
+    }
+    else {
+        return obj;
     }
 }
-
+function parseLline(line) {
+    return Array.from(line.match(/(\".*?\"|\'.*?\'|\S)+/g));
+}
+function typifyLsingle(obj) {
+    if (validLString(obj)) {
+        return {
+            type: "string",
+            value: obj.slice(1, obj.length - 1)
+        };
+    }
+    else if (validLBoolean(obj)) {
+        return {
+            type: "boolean",
+            value: obj === "true" ? true : false
+        };
+    }
+    else if (validLNumber(obj)) {
+        return {
+            type: "number",
+            value: Number(obj)
+        };
+    }
+    else if (validLOperator(obj)) {
+        return {
+            type: "operator",
+            value: obj
+        };
+    }
+    else if (validLCustom(obj)) {
+        return {
+            type: "custom",
+            value: obj
+        };
+    }
+    else if (validLName(obj)) {
+        return {
+            type: "name",
+            value: obj
+        };
+    }
+    else { //maybe this should return undefined
+        throw `Unknown type at line ${currentLine}, argument ${obj}`;
+    }
+}
+function typifyLline(parsedLine) {
+    var typedLline = [];
+    parsedLine.forEach((obj, i) => {
+        typedLline[i] = typifyLsingle(obj);
+    });
+    return typedLline;
+}
+function evalLline(line) {
+    const typedLline = typifyLline(parseLline(line));
+    if (isShow === true && typedLline.length > 0)
+        printTypedLine(typedLline);
+    if (runningStatus === true) { // has not come across a if with false
+        if (typedLline[0].type === "custom") { //custom ops
+        }
+        else { //normal ops
+            var i = 0, errorChance = { last: NaN, times: 0 };
+            while (i < typedLline.length) {
+                const revI = typedLline.length - (i + 1), //reverse index
+                cur = typedLline[revI]; //current obj
+                if (cur.type === "name" && storedObjects.some(el => el.name === cur.value)) { //if it is name and exists
+                    const named = storedObjects.find(el => el.name === cur.value);
+                    switch (named === null || named === void 0 ? void 0 : named.type) {
+                        case "function":
+                            switch (typeof (named === null || named === void 0 ? void 0 : named.action)) {
+                                case "function":
+                                    typedLline.splice(revI, (named === null || named === void 0 ? void 0 : named.argCount) + 1, named === null || named === void 0 ? void 0 : named.action(typedLline.slice(revI + 1, revI + (named === null || named === void 0 ? void 0 : named.argCount) + 1)));
+                                    i = 0;
+                                    break;
+                                case "string":
+                                    //typedLline.splice(revI, 1, named?.action );
+                                    break;
+                            }
+                            break;
+                        default: //name is variable
+                            i++;
+                            break;
+                    }
+                }
+                else if (cur.type === "operator") { //applies operator
+                    const operand = operators.find(el => el.name === cur.value);
+                    if (operand !== undefined)
+                        typedLline.splice(revI, operand.argCount + 1, operand.action(typedLline.slice(revI + 1, revI + 1 + operand.argCount))),
+                            i = 0;
+                }
+                else if (cur.type === "void") { //clears void
+                    typedLline.splice(revI, 1);
+                    i = 0;
+                }
+                else {
+                    i++;
+                }
+                if (errorChance.last === i)
+                    errorChance.times++;
+                else
+                    errorChance.times = 0;
+                errorChance.last = i;
+                if (errorChance.times > 100)
+                    throw "Failed to Evaluate at" + i;
+            }
+        }
+    }
+    else { //look for else or end otherwise do nothing
+    }
+    //console.log(storedObjects)
+}
+//evalLline("print + * 2 3 5")
+function readEvalFile(fileName) {
+    try {
+        const filePath = path.join(__dirname, fileName);
+        if (isShow == true)
+            console.log(`\nfrom file:///${filePath}\n`);
+        readEachLineSync(filePath, 'utf8', (line) => {
+            if (/\S+/.test(line) && !line.startsWith("//")) { // checks if not empty line
+                evalLline(line); //Most Important Moment 👀
+            }
+            if (mainFiles.includes(fileName))
+                currentLine++;
+        });
+        if (isShow == true)
+            console.log("\n");
+    }
+    catch (error) {
+        console.log(error);
+    }
+}
+function printTypedLine(typedLline) {
+    var endResult = "";
+    typedLline.forEach(el => {
+        switch (el.type) {
+            case "name":
+                endResult += ` \x1b[94m${el.value}\x1b[0m`;
+                break;
+            case "custom":
+                endResult += ` \x1b[34m${el.value}\x1b[0m`;
+                break;
+            case "operator":
+                endResult += ` \x1b[91m${el.value}\x1b[0m`;
+                break;
+            case "number":
+                endResult += ` \x1b[33m${el.value}\x1b[0m`;
+                break;
+            case "boolean":
+                endResult += ` \x1b[32m${el.value}\x1b[0m`;
+                break;
+            case "string":
+                endResult += ` \x1b[96m"${el.value}"\x1b[0m`;
+                break;
+            case "undefined":
+                endResult += ` \x1b[97m${el.value}\x1b[0m`;
+                break;
+            case "void":
+                endResult += "";
+                break;
+        }
+    });
+    if (endResult != "")
+        console.log(`\x1b[90m${currentLine}\x1b[0m` + endResult);
+}
 if (process.argv.length > 2) {
     const args = process.argv.slice(2); //all the arguments
     //evaluates args
     args.forEach(arg => {
-        if (arg.match(compiler.fileMatch.regex)) {
-            mainFile = arg.match(compiler.fileMatch.regex)[0];
-        } else {
+        if (arg.match(/.*\w\.lab/i)) { //is file
+            mainFiles.push(arg.match(/.*\w\.lab/i)[0]);
+        }
+        else {
             switch (arg) {
-                case compiler.args.help: //-h is triggered
-                    console.log(compiler.color("List of Arguments:").title);
-                    Object.entries(compiler.args).forEach(arg => {
-                        console.log(" " + arg[0] + ": " + compiler.color(arg[1]).code);
+                case "-h": //-h is triggered
+                    console.log("List of Arguments:");
+                    compArguments.forEach((val, key) => {
+                        console.log(` ${key}: ${val}`);
                     });
                     break;
-                case compiler.args.run: //-r is triggered
-                    isRun = true;
-                    break;
-                case compiler.args.docs: //-d is triggered
+                case "-d": //-d is triggered
                     genDoc = true;
                     break;
-                default:
-                    console.error(compiler.color("\nError Bad Argument:").error + ` ${arg}`)
+                case "-s": //-s is triggered
+                    isShow = true;
                     break;
+                default:
+                    console.error("Bad argument\nEnter -h to see all possible arguments");
+                    throw "Evaluation Failed";
             }
         }
     });
-    if (mainFile != undefined) {
+    if (mainFiles.length > 0) {
         //compileCode(path.join("/libs", "main.lab")); //DECIDE always imported?
-        compileCode(mainFile);
-
-    } else {
-        console.error(compiler.color("\nError No File Argument").error + "\nenter a file as " +
-            compiler.color(`${compiler.name} ${lang.sName} ${compiler.fileMatch.code}`).code);
+        //compileCode(mainFile);
+        mainFiles.forEach(file => {
+            readEvalFile(file);
+        });
     }
-} else {
-    console.error(`${compiler.color("\nError Missing Arguments").error} 
-    To learn more run ${compiler.color(`${compiler.name} ${lang.sName} ${compiler.args.help}`).code}`);
+    else {
+        console.error("No file argument\nEnter as \"node lambda.js *lab\"");
+        throw "Evaluation Failed";
+    }
+}
+else {
+    console.error("No argument\nEnter \"node lambda.js -h\" to get help");
+    throw "Evaluation Failed";
 }
