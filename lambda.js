@@ -31,7 +31,7 @@ validLBoolean = (obj) => /true|false/.test(obj), validLNumber = (obj) => !isNaN(
 };
 const compArguments = new Map().set("-h", "list all commands and help").set("-d", "generate docs from code").set("-s", "show the code as interpreted");
 // if false it will not eval until <end>
-var runningStatus = true, currentLine = 1, mainFiles = [], isShow = false, genDoc = false;
+var runningStatus = true, currentLine = 1, mainFiles = [], curFile = "", isShow = false, genDoc = false;
 const operators = [{
         name: "+",
         type: "operator",
@@ -148,7 +148,7 @@ var storedObjects = [{
         action: (ents) => {
             ents.forEach(lib => {
                 if (lib.type == "string") { // > "library.lab"
-                    readEvalFile(path.join(path.dirname(mainFiles), lib.value));
+                    readEvalFile(path.join(path.dirname(curFile), lib.value));
                 }
                 else if (lib.type == "name") { // > library , will apply to ValidLName ruleset
                     //base libraries
@@ -393,10 +393,10 @@ function evalLline(line) {
 //evalLline("print + * 2 3 5")
 function readEvalFile(fileName) {
     try {
-        const filePath = path.join(__dirname, fileName);
+        //const filePath: string = path.join( fileName);
         if (isShow == true)
-            console.log(`\nfrom file:///${filePath}\n`);
-        readEachLineSync(filePath, 'utf8', (line) => {
+            console.log(`\nfrom "${fileName}"\n`);
+        readEachLineSync(fileName, 'utf8', (line) => {
             if (/\S+/.test(line) && !line.startsWith("//")) { // checks if not empty line
                 evalLline(line); //Most Important Moment 👀
             }
@@ -448,7 +448,8 @@ if (process.argv.length > 2) {
     //evaluates args
     args.forEach(arg => {
         if (arg.match(/.*\w\.lab/i)) { //is file
-            mainFiles.push(arg.match(/.*\w\.lab/i)[0]);
+            curFile = arg.match(/.*\w\.lab/i)[0];
+            mainFiles.push(curFile);
         }
         else {
             switch (arg) {

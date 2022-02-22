@@ -47,6 +47,7 @@ const compArguments = new Map().set(
 var runningStatus: boolean = true,
     currentLine: number = 1,
     mainFiles: string[] = [],
+    curFile: string = "",
     isShow: boolean = false,
     genDoc: boolean = false;
 
@@ -68,14 +69,18 @@ interface LFunction { //Function
     type: "function",
     args: string[],
     argCount: number,
-    action: Function | string //part that is ran, HARDCODED if Function, INTERPRETED if string
+    action: LAction | string, //part that is ran, HARDCODED if LAction, INTERPRETED if string
 }
 
 interface LOperator { //Operator, ie + - * / ...
     name: string,
     type: "operator",
     argCount: number,
-    action: Function //part that is ran, HARDCODED if Function, INTERPRETED if string
+    action: LAction,
+}
+
+interface LAction { //Hardcoded Function
+    (ents: LObject[]): LObject
 }
 
 const operators: LOperator[] = [{
@@ -195,7 +200,7 @@ var storedObjects: Array<LVariable | LFunction> = [{
     action: (ents: LObject[]) => {
         ents.forEach(lib => {
             if (lib.type == "string") { // > "library.lab"
-                readEvalFile(path.join(path.dirname(mainFiles), lib.value));
+                readEvalFile(path.join(path.dirname(curFile), lib.value));
             } else if (lib.type == "name") { // > library , will apply to ValidLName ruleset
                 //base libraries
                 readEvalFile(path.join("/libs", lib.value + ".lab")); //will reach from compiler location
@@ -368,6 +373,7 @@ function typifyLsingle(obj: string): LObject { //typfies single el
     }
 
 }
+
 function typifyLline(parsedLine: string[]): Array<LObject> { //typifies the given parsedLine
     var typedLline: Array<LObject> = [];
     parsedLine.forEach((obj: string, i: number) => {
@@ -391,24 +397,26 @@ function evalLline(line: string): any {
 
                 if (cur.type === "name" && storedObjects.some(el => el.name === cur.value)) { //if it is name and exists
                     const named = storedObjects.find(el => el.name === cur.value);
-                    switch (named?.type) {
-                        case "function":
-                            switch (typeof (named?.action)) {
-                                case "function":
-                                    typedLline.splice(revI, named?.argCount + 1, named?.action(typedLline.slice(revI + 1, revI + named?.argCount + 1)));
-                                    i = 0;
-                                    break;
-                                case "string":
-                                    //typedLline.splice(revI, 1, named?.action );
-                                    break;
-                            }
+                    if (named != undefined) {
+                        switch (named.type) {
+                            case "function":
+                                switch (typeof (named.action)) {
+                                    case "function":
+                                        typedLline.splice(revI, named.argCount + 1, named.action(typedLline.slice(revI + 1, revI + named.argCount + 1)));
+                                        i = 0;
+                                        break;
+                                    case "string":
+                                        //typedLline.splice(revI, 1, named?.action );
+                                        break;
+                                }
 
-                            break;
-                        default: //name is variable
-                            i++;
-                            break;
-
+                                break;
+                            default: //name is variable
+                                i++;
+                                break;
+                        }
                     }
+
                 } else if (cur.type === "operator") { //applies operator
                     const operand = operators.find(el => el.name === cur.value);
                     if (operand !== undefined)
@@ -441,10 +449,10 @@ function evalLline(line: string): any {
 
 function readEvalFile(fileName: string) {
     try {
-        const filePath: string = path.join(__dirname, fileName);
+        //const filePath: string = path.join( fileName);
         if (isShow == true)
-            console.log(`\nfrom file:///${filePath}\n`)
-        readEachLineSync(filePath, 'utf8', (line: string) => {
+            console.log(`\nfrom "${fileName}"\n`)
+        readEachLineSync(fileName, 'utf8', (line: string) => {
             if (/\S+/.test(line) && !line.startsWith("//")) { // checks if not empty line
                 evalLline(line); //Most Important Moment 👀
             }
@@ -499,7 +507,8 @@ if (process.argv.length > 2) {
     //evaluates args
     args.forEach(arg => {
         if (arg.match(/.*\w\.lab/i)) { //is file
-            mainFiles.push(arg.match(/.*\w\.lab/i)![0]);
+            curFile = arg.match(/.*\w\.lab/i)![0];
+            mainFiles.push(curFile);
         } else {
             switch (arg) {
                 case "-h": //-h is triggered
